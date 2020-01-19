@@ -1,0 +1,82 @@
+--- speech-dispatcher-0.7.1/src/modules/festival_client.c	2010-09-01 15:30:12.000000000 +0200
++++ speech-dispatcher-0.7.1/src/modules/festival_client.c	2013-10-30 14:19:24.688561025 +0100
+@@ -433,13 +433,10 @@ festival_accept_any_response(FT_Info *in
+ #define FEST_SEND_CMD(format) \
+     { \
+         FILE *fd; \
+-        char *str; \
+         fd = fdopen(dup(info->server_fd),"wb"); \
+         if (fd != NULL){ \
+-          str = g_strdup_printf(format"\n"); \
+-          fprintf(fd, str); \
+-          DBG("-> Festival: |%s|", str); \
+-          free(str); \
++          fprintf(fd, "%s\n", format);	     \
++          DBG("-> Festival: |%s\n|", format); \
+           fclose(fd); \
+         }else{ \
+           DBG("Can't open connection"); \
+@@ -449,13 +446,10 @@ festival_accept_any_response(FT_Info *in
+ #define FEST_SEND_CMDA(format, args...) \
+     { \
+         FILE *fd; \
+-        char *str; \
+         fd = fdopen(dup(info->server_fd),"wb"); \
+         if (fd != NULL){ \
+-          str = g_strdup_printf(format"\n", args); \
+-          fprintf(fd, str); \
+-          DBG("-> Festival: |%s|", str); \
+-          free(str); \
++          fprintf(fd, format"\n", args);	   \
++          DBG("-> Festival: |"format"\n|", args);	   \
+           fclose(fd); \
+         }else{ \
+           DBG("Can't open connection"); \
+@@ -529,8 +523,8 @@ festival_speak_command(FT_Info *info, ch
+ {
+     FILE *fd;
+     const char *p;
+-    char *str;
+     int ret;
++    char delimiter;
+ 
+     if (festival_check_info(info, "festival_speak_command") == -1) return -1;
+     if (command == NULL) return -1;
+@@ -543,10 +537,10 @@ festival_speak_command(FT_Info *info, ch
+ 
+     /* Send the command and data */
+     if (symbol == 0)
+-      str = g_strdup_printf("(%s \"", command);
++      delimiter = '"';
+     else
+-      str = g_strdup_printf("(%s '", command);
+-    fprintf(fd, str);
++      delimiter = '\'';
++    fprintf(fd, "(%s %c", command, delimiter);
+     /* Copy text over to server, escaping any quotes */
+     for (p=text; p && (*p != '\0'); p++)
+     {
+@@ -557,9 +551,9 @@ festival_speak_command(FT_Info *info, ch
+     else fprintf(fd, ")\n");
+ 
+     DBG("-> Festival: escaped text is %s", text);
+-    DBG("-> Festival: |%sthe text is displayed above\")|", str);
++    DBG("-> Festival: |%s%cthe text is displayed above\")|",
++	command, delimiter);
+ 
+-    free(str);
+     /* Close the stream (but not the socket) */
+     fclose(fd);
+     DBG("Resources freed");
+--- speech-dispatcher-0.7.1/src/modules/module_utils.c	2010-09-10 10:23:55.000000000 +0200
++++ speech-dispatcher-0.7.1/src/modules/module_utils.c	2013-10-30 14:05:36.733707924 +0100
+@@ -1006,7 +1006,7 @@ module_send_asynchronous(char *text)
+ {
+     pthread_mutex_lock(&module_stdout_mutex);
+     DBG("Printing reply: %s", text);
+-    fprintf(stdout, text);
++    fprintf(stdout, "%s", text);
+     fflush(stdout);
+     DBG("Printed");
+     pthread_mutex_unlock(&module_stdout_mutex);
+

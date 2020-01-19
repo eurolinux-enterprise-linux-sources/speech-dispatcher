@@ -1,0 +1,360 @@
+From 60cb35a5b22344569f13364f0c69d6f73d6302c6 Mon Sep 17 00:00:00 2001
+From: Rui Matos <tiagomatos@gmail.com>
+Date: Thu, 31 Oct 2013 14:10:06 +0100
+Subject: [PATCH] libspeechd: Make the buffer handling more robust
+
+---
+ src/c/api/libspeechd.c | 175 ++++++++++++++++++++++++++++++-------------------
+ 1 file changed, 108 insertions(+), 67 deletions(-)
+
+diff --git a/src/c/api/libspeechd.c b/src/c/api/libspeechd.c
+index 1fa1352..683106b 100644
+--- a/src/c/api/libspeechd.c
++++ b/src/c/api/libspeechd.c
+@@ -625,7 +625,7 @@ spd_say(SPDConnection *connection, SPDPriority priority, const char* text)
+ int
+ spd_sayf(SPDConnection *connection, SPDPriority priority, const char *format, ...)
+ {
+-    static int ret;    
++    int ret;
+     va_list args;
+     char *buf;
+ 
+@@ -658,10 +658,13 @@ spd_stop_all(SPDConnection *connection)
+ int
+ spd_stop_uid(SPDConnection *connection, int target_uid)
+ {
+-  static char command[16];
++  char *command;
++  int ret;
+ 
+-  sprintf(command, "STOP %d", target_uid);
+-  return spd_execute_command(connection, command);
++  command = g_strdup_printf("STOP %d", target_uid);
++  ret = spd_execute_command(connection, command);
++  g_free(command);
++  return ret;
+ }
+ 
+ int
+@@ -679,10 +682,13 @@ spd_cancel_all(SPDConnection *connection)
+ int
+ spd_cancel_uid(SPDConnection *connection, int target_uid)
+ {
+-  static char command[16];
++  char *command;
++  int ret;
+ 
+-  sprintf(command, "CANCEL %d", target_uid);
+-  return spd_execute_command(connection, command);
++  command = g_strdup_printf("CANCEL %d", target_uid);
++  ret = spd_execute_command(connection, command);
++  g_free(command);
++  return ret;
+ }
+ 
+ int
+@@ -700,10 +706,13 @@ spd_pause_all(SPDConnection *connection)
+ int
+ spd_pause_uid(SPDConnection *connection, int target_uid)
+ {
+-  char command[16];
++  char *command;
++  int ret;
+ 
+-  sprintf(command, "PAUSE %d", target_uid);
+-  return spd_execute_command(connection, command);
++  command = g_strdup_printf("PAUSE %d", target_uid);
++  ret = spd_execute_command(connection, command);
++  g_free(command);
++  return ret;
+ }
+ 
+ int
+@@ -721,10 +730,13 @@ spd_resume_all(SPDConnection *connection)
+ int
+ spd_resume_uid(SPDConnection *connection, int target_uid)
+ {
+-  static char command[16];
++  char *command;
++  int ret;
+ 
+-  sprintf(command, "RESUME %d", target_uid);
+-  return spd_execute_command(connection, command);
++  command = g_strdup_printf("RESUME %d", target_uid);
++  ret = spd_execute_command(connection, command);
++  g_free(command);
++  return ret;
+ }
+ 
+ int
+@@ -753,7 +765,7 @@ spd_key(SPDConnection *connection, SPDPriority priority, const char *key_name)
+ int
+ spd_char(SPDConnection *connection, SPDPriority priority, const char *character)
+ {
+-    static char command[16];
++    char *command;
+     int ret;
+ 
+     if (character == NULL) return -1;
+@@ -764,8 +776,9 @@ spd_char(SPDConnection *connection, SPDPriority priority, const char *character)
+     ret = spd_set_priority(connection, priority);
+     if (ret) RET(-1);
+ 
+-    sprintf(command, "CHAR %s", character);
++    command = g_strdup_printf("CHAR %s", character);
+     ret = spd_execute_command_wo_mutex(connection, command);
++    g_free(command);
+     if (ret) RET(-1);
+ 
+     pthread_mutex_unlock(connection->ssip_mutex);
+@@ -776,8 +789,8 @@ spd_char(SPDConnection *connection, SPDPriority priority, const char *character)
+ int
+ spd_wchar(SPDConnection *connection, SPDPriority priority, wchar_t wcharacter)
+ {
+-    static char command[16];
+-    char character[8];
++    char *command;
++    char character[MB_LEN_MAX];
+     int ret;
+ 
+     pthread_mutex_lock(connection->ssip_mutex);
+@@ -789,8 +802,9 @@ spd_wchar(SPDConnection *connection, SPDPriority priority, wchar_t wcharacter)
+     if (ret) RET(-1);
+ 
+     assert(character != NULL);
+-    sprintf(command, "CHAR %s", character);
++    command = g_strdup_printf("CHAR %s", character);
+     ret = spd_execute_command_wo_mutex(connection, command);
++    g_free(command);
+     if (ret) RET(-1);
+ 
+     pthread_mutex_unlock(connection->ssip_mutex);
+@@ -824,17 +838,20 @@ spd_sound_icon(SPDConnection *connection, SPDPriority priority, const char *icon
+ int
+ spd_w_set_punctuation(SPDConnection *connection, SPDPunctuation type, const char* who)
+ {
+-    char command[32];
++    char *command;
+     int ret;
+ 
+     if (type == SPD_PUNCT_ALL)
+-        sprintf(command, "SET %s PUNCTUATION all", who);
+-    if (type == SPD_PUNCT_NONE)
+-        sprintf(command, "SET %s PUNCTUATION none", who);
+-    if (type == SPD_PUNCT_SOME)
+-        sprintf(command, "SET %s PUNCTUATION some", who);
++        command = g_strdup_printf("SET %s PUNCTUATION all", who);
++    else if (type == SPD_PUNCT_NONE)
++        command = g_strdup_printf("SET %s PUNCTUATION none", who);
++    else if (type == SPD_PUNCT_SOME)
++        command = g_strdup_printf("SET %s PUNCTUATION some", who);
++    else
++        return -1;
+ 
+-    ret = spd_execute_command(connection, command);    
++    ret = spd_execute_command(connection, command);
++    g_free(command);
+     
+     return ret;
+ }
+@@ -842,17 +859,20 @@ spd_w_set_punctuation(SPDConnection *connection, SPDPunctuation type, const char
+ int
+ spd_w_set_capital_letters(SPDConnection *connection, SPDCapitalLetters type, const char* who)
+ {
+-    char command[64];
++    char *command;
+     int ret;
+ 
+     if (type == SPD_CAP_NONE)
+-        sprintf(command, "SET %s CAP_LET_RECOGN none", who);
+-    if (type == SPD_CAP_SPELL)
+-        sprintf(command, "SET %s CAP_LET_RECOGN spell", who);
+-    if (type == SPD_CAP_ICON)
+-        sprintf(command, "SET %s CAP_LET_RECOGN icon", who);
++        command = g_strdup_printf("SET %s CAP_LET_RECOGN none", who);
++    else if (type == SPD_CAP_SPELL)
++        command = g_strdup_printf("SET %s CAP_LET_RECOGN spell", who);
++    else if (type == SPD_CAP_ICON)
++        command = g_strdup_printf("SET %s CAP_LET_RECOGN icon", who);
++    else
++        return -1;
+ 
+-    ret = spd_execute_command(connection, command);    
++    ret = spd_execute_command(connection, command);
++    g_free(command);
+     
+     return ret;
+ }
+@@ -860,15 +880,18 @@ spd_w_set_capital_letters(SPDConnection *connection, SPDCapitalLetters type, con
+ int
+ spd_w_set_spelling(SPDConnection *connection, SPDSpelling type, const char* who)
+ {
+-    char command[32];
++    char *command;
+     int ret;
+ 
+     if (type == SPD_SPELL_ON)
+-        sprintf(command, "SET %s SPELLING on", who);
+-    if (type == SPD_SPELL_OFF)
+-        sprintf(command, "SET %s SPELLING off", who);
++        command = g_strdup_printf("SET %s SPELLING on", who);
++    else if (type == SPD_SPELL_OFF)
++        command = g_strdup_printf("SET %s SPELLING off", who);
++    else
++        return -1;
+ 
+     ret = spd_execute_command(connection, command);
++    g_free(command);
+ 
+     return ret;
+ }
+@@ -876,15 +899,18 @@ spd_w_set_spelling(SPDConnection *connection, SPDSpelling type, const char* who)
+ int
+ spd_set_data_mode(SPDConnection *connection, SPDDataMode mode)
+ {
+-    char command[32];
++    char *command;
+     int ret;
+ 
+     if (mode == SPD_DATA_TEXT)
+-        sprintf(command, "SET SELF SSML_MODE off");
+-    if (mode == SPD_DATA_SSML)
+-        sprintf(command, "SET SELF SSML_MODE on");
++        command = g_strdup_printf("SET SELF SSML_MODE off");
++    else if (mode == SPD_DATA_SSML)
++        command = g_strdup_printf("SET SELF SSML_MODE on");
++    else
++        return -1;
+ 
+     ret = spd_execute_command(connection, command);
++    g_free(command);
+ 
+     return ret;
+ }
+@@ -892,31 +918,38 @@ spd_set_data_mode(SPDConnection *connection, SPDDataMode mode)
+ int
+ spd_w_set_voice_type(SPDConnection *connection, SPDVoiceType type, const char *who)
+ {
+-    static char command[64];
++    char *command;
++    int ret;
+ 
+     switch(type){
+-    case SPD_MALE1: sprintf(command, "SET %s VOICE MALE1", who); break;
+-    case SPD_MALE2: sprintf(command, "SET %s VOICE MALE2", who); break;
+-    case SPD_MALE3: sprintf(command, "SET %s VOICE MALE3", who); break;
+-    case SPD_FEMALE1: sprintf(command, "SET %s VOICE FEMALE1", who); break;
+-    case SPD_FEMALE2: sprintf(command, "SET %s VOICE FEMALE2", who); break;
+-    case SPD_FEMALE3: sprintf(command, "SET %s VOICE FEMALE3", who); break;
+-    case SPD_CHILD_MALE: sprintf(command, "SET %s VOICE CHILD_MALE", who); break;
+-    case SPD_CHILD_FEMALE: sprintf(command, "SET %s VOICE CHILD_FEMALE", who); break;
++    case SPD_MALE1: command = g_strdup_printf("SET %s VOICE MALE1", who); break;
++    case SPD_MALE2: command = g_strdup_printf("SET %s VOICE MALE2", who); break;
++    case SPD_MALE3: command = g_strdup_printf("SET %s VOICE MALE3", who); break;
++    case SPD_FEMALE1: command = g_strdup_printf("SET %s VOICE FEMALE1", who); break;
++    case SPD_FEMALE2: command = g_strdup_printf("SET %s VOICE FEMALE2", who); break;
++    case SPD_FEMALE3: command = g_strdup_printf("SET %s VOICE FEMALE3", who); break;
++    case SPD_CHILD_MALE: command = g_strdup_printf("SET %s VOICE CHILD_MALE", who); break;
++    case SPD_CHILD_FEMALE: command = g_strdup_printf("SET %s VOICE CHILD_FEMALE", who); break;
+     default: return -1;
+     }
+     
+-    return spd_execute_command(connection, command);      
++    ret = spd_execute_command(connection, command);
++    g_free(command);
++
++    return ret;
+ }
+ 
+ #define SPD_SET_COMMAND_INT(param, ssip_name, condition) \
+     int \
+     spd_w_set_ ## param (SPDConnection *connection, signed int val, const char* who) \
+     { \
+-        static char command[64]; \
++        char *command; \
++        int ret;                     \
+         if ((!condition)) return -1; \
+-        sprintf(command, "SET %s " #ssip_name " %d", who, val); \
+-        return spd_execute_command(connection, command); \
++        command = g_strdup_printf("SET %s " #ssip_name " %d", who, val); \
++        ret = spd_execute_command(connection, command); \
++        g_free(command);                                \
++        return ret;                                     \
+     } \
+     int \
+     spd_set_ ## param (SPDConnection *connection, signed int val) \
+@@ -931,9 +964,12 @@ spd_w_set_voice_type(SPDConnection *connection, SPDVoiceType type, const char *w
+     int \
+     spd_set_ ## param ## _uid(SPDConnection *connection, signed int val, unsigned int uid) \
+     { \
+-        char who[8]; \
+-        sprintf(who, "%d", uid); \
+-        return spd_w_set_ ## param (connection, val, who); \
++        char *who;               \
++        int ret;                 \
++        who = g_strdup_printf("%d", uid);                  \
++        ret = spd_w_set_ ## param (connection, val, who);  \
++        g_free(who);                                       \
++        return ret;                                        \
+     }
+ 
+ #define SPD_SET_COMMAND_STR(param, ssip_name) \
+@@ -1025,15 +1061,16 @@ spd_set_notification_off(SPDConnection *connection, SPDNotification notification
+ 
+ #define NOTIFICATION_SET(val, ssip_val) \
+     if (notification & val){ \
+-	sprintf(command, "SET SELF NOTIFICATION "ssip_val" %s", state);\
++	command = g_strdup_printf("SET SELF NOTIFICATION "ssip_val" %s", state);\
+ 	ret = spd_execute_command_wo_mutex(connection, command);\
++        g_free(command);\
+ 	if (ret < 0) RET(-1);\
+     }
+ 
+ int
+ spd_set_notification(SPDConnection *connection, SPDNotification notification, const char* state)
+ {
+-    static char command[64];
++    char *command;
+     int ret;
+ 
+     if (connection->mode != SPD_MODE_THREADED) return -1;
+@@ -1337,22 +1374,26 @@ spd_send_data_wo_mutex(SPDConnection *connection, const char *message, int wfr)
+ static int
+ spd_set_priority(SPDConnection *connection, SPDPriority priority)
+ {
+-    static char p_name[16];
+-    static char command[64];
++    const char *p_name;
++    char *command;
++    int ret;
+ 
+     switch(priority){
+-    case SPD_IMPORTANT: strcpy(p_name, "IMPORTANT"); break;
+-    case SPD_MESSAGE: strcpy(p_name, "MESSAGE"); break;
+-    case SPD_TEXT: strcpy(p_name, "TEXT"); break;
+-    case SPD_NOTIFICATION: strcpy(p_name, "NOTIFICATION"); break;
+-    case SPD_PROGRESS: strcpy(p_name, "PROGRESS"); break;
++    case SPD_IMPORTANT: p_name = "IMPORTANT"; break;
++    case SPD_MESSAGE: p_name = "MESSAGE"; break;
++    case SPD_TEXT: p_name = "TEXT"; break;
++    case SPD_NOTIFICATION: p_name = "NOTIFICATION"; break;
++    case SPD_PROGRESS: p_name = "PROGRESS"; break;
+     default: 
+       SPD_DBG("Error: Can't set priority! Incorrect value.");
+       return -1;
+     }
+ 		 
+-    sprintf(command, "SET SELF PRIORITY %s", p_name);
+-    return spd_execute_command_wo_mutex(connection, command);
++    command = g_strdup_printf("SET SELF PRIORITY %s", p_name);
++    ret = spd_execute_command_wo_mutex(connection, command);
++    g_free(command);
++
++    return ret;
+ }
+ 
+ 
+-- 
+1.8.3.1
+
